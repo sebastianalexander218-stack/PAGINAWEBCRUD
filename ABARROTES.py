@@ -1,6 +1,11 @@
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string, request, redirect, url_for, session, flash
+import json
+import os
+import random
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
+app.secret_key = 'clave_secreta_para_sesiones_abarrotes_flor'
 
 USUARIO_CORRECTO = "alex@123"
 CONTRASENA_CORRECTA = "alex123"
@@ -8,6 +13,353 @@ CONTRASENA_CORRECTA = "alex123"
 clientes_registrados = []
 registro_contador = [1]
 
+# ---------- Gestión de productos con archivo JSON ----------
+PRODUCTOS_ARCHIVO = "productos.json"
+
+def cargar_productos():
+    """Carga la lista de productos desde el archivo JSON."""
+    if not os.path.exists(PRODUCTOS_ARCHIVO):
+        productos_ejemplo = [
+            {"id": 1, "nombre": "Manzana", "descripcion": "Manzanas rojas dulces", "precio": 3.50, "imagen": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTefUHgejxyLcdttT_ovpNnkWpHNzXHDsN9RQ&s"},
+            {"id": 2, "nombre": "Plátano", "descripcion": "Plátanos de seda", "precio": 2.00, "imagen": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcStP3GhAe2hFpPDHhYRSFers5V2xidAaDkUJw&s"},
+            {"id": 3, "nombre": "Leche Entera", "descripcion": "Leche pasteurizada", "precio": 4.20, "imagen": "https://media.falabella.com/tottusPE/43548139_1/w=1500,h=1500,fit=cover"}
+        ]
+        guardar_productos(productos_ejemplo)
+        return productos_ejemplo
+    with open(PRODUCTOS_ARCHIVO, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def guardar_productos(productos):
+    with open(PRODUCTOS_ARCHIVO, "w", encoding="utf-8") as f:
+        json.dump(productos, f, indent=2, ensure_ascii=False)
+
+# ---------- TEMPLATE DEL DASHBOARD ----------
+DASHBOARD_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Abarrotes Flor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: 'Poppins', sans-serif; background: #f4f4f4; color: #333; }
+        :root {
+            --card: #fff;
+            --r: 16px;
+            --shadow-sm: 0 6px 15px rgba(0,0,0,0.08);
+            --muted: #777;
+            --dark: #2a6e3f;
+            --gold: #c89a3e;
+        }
+        header {
+            background: linear-gradient(135deg, #2a6e3f 0%, #54a358 100%);
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        header .brand {
+            color: white;
+            font-size: 24px;
+            font-weight: 700;
+            text-decoration: none;
+        }
+        header .brand span { color: var(--gold); }
+        header nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 20px;
+            font-weight: 600;
+            transition: 0.2s;
+        }
+        header nav a:hover { text-decoration: underline; }
+        .container {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2rem;
+            margin-top: 1rem;
+        }
+        .kpi-card {
+            background: var(--card);
+            padding: 1.5rem;
+            border-radius: var(--r);
+            box-shadow: var(--shadow-sm);
+            text-align: center;
+        }
+        .kpi-card h3 {
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .kpi-card .valor {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--dark);
+            line-height: 1.2;
+        }
+        .kpi-card .referencia {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-top: 0.5rem;
+        }
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .chart-box {
+            background: var(--card);
+            padding: 1.5rem;
+            border-radius: var(--r);
+            box-shadow: var(--shadow-sm);
+        }
+        .chart-box h3 {
+            margin-bottom: 1rem;
+            color: var(--dark);
+        }
+        .actualizacion {
+            text-align: right;
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-top: 1rem;
+        }
+        .seccion {
+            background: white;
+            border-radius: var(--r);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-sm);
+        }
+        .seccion h2 {
+            color: var(--dark);
+            margin-bottom: 1rem;
+            border-left: 5px solid var(--gold);
+            padding-left: 15px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f0f7f0;
+            color: var(--dark);
+        }
+        .img-mini {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        .btn-dash {
+            display: inline-block;
+            background: var(--dark);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            text-decoration: none;
+            margin-top: 15px;
+            font-weight: 600;
+            transition: 0.2s;
+        }
+        .btn-dash:hover { background: #3c8c4a; }
+        .volver {
+            display: inline-block;
+            margin-top: 20px;
+            color: var(--dark);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        @media (max-width: 768px) {
+            .chart-grid { grid-template-columns: 1fr; }
+            header { flex-direction: column; gap: 10px; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <a class="brand" href="/">Abarrotes <span>Flor</span></a>
+    <nav>
+        <a href="/">Inicio</a>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/admin/productos">Productos</a>
+        <a href="/logout">Cerrar sesión</a>
+    </nav>
+</header>
+
+<div class="container">
+    <h2 style="margin-top:1.5rem; color: #2a6e3f;">Panel de Administración</h2>
+
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <h3>Productos</h3>
+            <div class="valor">{{ total_productos }}</div>
+            <div class="referencia">
+                {% if variacion_productos > 0 %}
+                    +{{ variacion_productos }} vs. inicio (7)
+                {% elif variacion_productos < 0 %}
+                    {{ variacion_productos }} vs. inicio (7)
+                {% else %}
+                    Sin cambios
+                {% endif %}
+            </div>
+        </div>
+        <div class="kpi-card">
+            <h3>Precio promedio</h3>
+            <div class="valor">S/ {{ "%.2f"|format(precio_promedio) }}</div>
+            <div class="referencia">Meta: S/ 5.50</div>
+        </div>
+        <div class="kpi-card">
+            <h3>Clientes</h3>
+            <div class="valor">{{ total_clientes }}</div>
+            <div class="referencia">Objetivo: 50</div>
+        </div>
+        <div class="kpi-card">
+            <h3>Ventas del mes</h3>
+            <div class="valor">S/ {{ "%.2f"|format(ventas_mes) }}</div>
+            <div class="referencia">Mes anterior: S/ 0.00</div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-box">
+            <h3>Ventas últimos 7 días</h3>
+            <div style="position: relative; height: 260px;">
+                <canvas id="lineChart"></canvas>
+            </div>
+        </div>
+        <div class="chart-box">
+            <h3>Registros Recientes (Clientes vs Productos)</h3>
+            <div style="position: relative; height: 260px;">
+                <canvas id="barChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="seccion">
+        <h2>Últimos Clientes Registrados</h2>
+        {% if ultimos_clientes %}
+        <table>
+            <thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Dirección</th></tr></thead>
+            <tbody>
+                {% for c in ultimos_clientes %}
+                <tr>
+                    <td>{{ c.id }}</td>
+                    <td>{{ c.nombre }}</td>
+                    <td>{{ c.email }}</td>
+                    <td>{{ c.telefono }}</td>
+                    <td>{{ c.direccion }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No hay clientes registrados aún.</p>
+        {% endif %}
+        <a href="/" class="btn-dash">Ver panel de clientes</a>
+    </div>
+
+    <div class="seccion">
+        <h2>Últimos Productos Agregados</h2>
+        {% if ultimos_productos %}
+        <table>
+            <thead><tr><th>ID</th><th>Imagen</th><th>Nombre</th><th>Descripción</th><th>Precio</th></tr></thead>
+            <tbody>
+                {% for p in ultimos_productos %}
+                <tr>
+                    <td>{{ p.id }}</td>
+                    <td><img src="{{ p.imagen }}" class="img-mini" onerror="this.src='https://via.placeholder.com/40'"></td>
+                    <td>{{ p.nombre }}</td>
+                    <td>{{ p.descripcion[:50] }}</td>
+                    <td>S/ {{ p.precio }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No hay productos dinámicos aún. <a href="/admin/productos/agregar">Agrega uno</a></p>
+        {% endif %}
+        <a href="/admin/productos" class="btn-dash">Gestionar productos</a>
+    </div>
+
+    <div class="actualizacion">
+        Última actualización: {{ hora_actual }}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    // Gráfico de Líneas (Ventas)
+    const ctxLine = document.getElementById('lineChart').getContext('2d');
+    new Chart(ctxLine, {
+        type: 'line',
+        data: {
+            labels: {{ dias | tojson }},
+            datasets: [{
+                label: 'Ventas (S/)',
+                data: {{ ventas_diarias | tojson }},
+                borderColor: '#2a6e3f',
+                backgroundColor: 'rgba(42, 110, 63, 0.1)',
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+
+    // Gráfico de Barras (Registros Recientes)
+    const ctxBar = document.getElementById('barChart').getContext('2d');
+    new Chart(ctxBar, {
+        type: 'bar',
+        data: {
+            labels: {{ dias | tojson }},
+            datasets: [
+                {
+                    label: 'Nuevos Clientes',
+                    data: {{ nuevos_clientes_linea | tojson }},
+                    backgroundColor: '#c89a3e'
+                },
+                {
+                    label: 'Nuevos Productos',
+                    data: {{ nuevos_productos_linea | tojson }},
+                    backgroundColor: '#2a6e3f'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+</script>
+</body>
+</html>
+"""
+
+# -----------------------------------------------------------
 
 @app.route("/registrarse", methods=["GET", "POST"])
 def registrarse():
@@ -200,14 +552,19 @@ def registrarse():
 @app.route("/", methods=["GET", "POST"])
 def pagina():
 
+    # Usar sesión para mantener autenticación
+    usuario_autenticado = session.get("autenticado", False)
     mensaje_error = ""
-    usuario_autenticado = False
+
+    # Cargar productos agregados desde el panel de administración
+    productos_dinamicos = cargar_productos()
 
     if request.method == "POST":
         email = request.form.get("email")
         password = request.form.get("password")
 
         if email == USUARIO_CORRECTO and password == CONTRASENA_CORRECTA:
+            session["autenticado"] = True
             usuario_autenticado = True
         else:
             mensaje_error = "Credenciales incorrectas. Inténtalo nuevamente."
@@ -710,20 +1067,33 @@ def pagina():
 
     if usuario_autenticado:
         nav_auth_html = f"""
-        <span class="user-welcome">
-            ¡Hola, {USUARIO_CORRECTO}!
-        </span>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <span class="user-welcome">
+                ¡Hola, {USUARIO_CORRECTO}!
+            </span>
+            <a href="/dashboard" style="color:white; font-weight:600; font-size:13px; background:rgba(255,255,255,0.2); padding:8px 16px; border-radius:25px; text-decoration:none;">
+                Dashboard
+            </a>
+            <a href="/admin/productos" style="color:white; font-weight:600; font-size:13px; background:rgba(255,255,255,0.2); padding:8px 16px; border-radius:25px; text-decoration:none;">
+                Admin Productos
+            </a>
+            <a href="/logout" style="color:white; font-weight:600; font-size:13px; background:rgba(255,255,255,0.2); padding:8px 16px; border-radius:25px; text-decoration:none;">
+                Cerrar sesión
+            </a>
+        </div>
         """
     else:
         nav_auth_html = """
-        <form class="login-form" method="POST">
-            <input type="email" name="email" placeholder="Correo" required>
-            <input type="password" name="password" placeholder="Contraseña" required>
-            <button type="submit">Ingresar</button>
-        </form>
-        <a href="/registrarse" style="color:white; font-weight:600; font-size:13px; background:rgba(255,255,255,0.2); padding:8px 16px; border-radius:25px; text-decoration:none;">
-            Registrarse
-        </a>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <form class="login-form" method="POST" style="display:flex; gap:8px;">
+                <input type="email" name="email" placeholder="Correo" required>
+                <input type="password" name="password" placeholder="Contraseña" required>
+                <button type="submit">Ingresar</button>
+            </form>
+            <a href="/registrarse" style="color:white; font-weight:600; font-size:13px; background:rgba(255,255,255,0.2); padding:8px 16px; border-radius:25px; text-decoration:none;">
+                Registrarse
+            </a>
+        </div>
         """
 
     if usuario_autenticado:
@@ -863,6 +1233,20 @@ def pagina():
         """
     else:
         error_html = ""
+
+    # Generar las tarjetas para los productos dinámicos (los que vienen del JSON)
+    productos_dinamicos_html = ""
+    for p in productos_dinamicos:
+        productos_dinamicos_html += f"""
+        <div class="oferta-card">
+            <span class="badge-oferta">Nuevo</span>
+            <h3>{p['nombre']}</h3>
+            <img src="{p['imagen']}" alt="{p['nombre']}" onerror="this.src='https://via.placeholder.com/150'">
+            <p>{p['descripcion'][:100]}</p>
+            <p class="precio-producto">S/ {p['precio']:.2f}</p>
+            <a href="#" class="btn-adquirir">Pedir Producto</a>
+        </div>
+        """
 
     html = f"""
     <!DOCTYPE html>
@@ -1637,6 +2021,8 @@ def pagina():
                             <p class="precio-producto">S/ 3.40</p>
                             <a href="#" class="btn-adquirir">Pedir Producto</a>
                         </div>
+
+                        {productos_dinamicos_html}   <!-- PRODUCTOS AGREGADOS DESDE EL PANEL -->
                     </div>
                 </section>
             </div>
@@ -1972,5 +2358,259 @@ def pagina():
     return render_template_string(html)
 
 
+# ---------- Rutas para administración de productos ----------
+@app.route("/admin/productos")
+def admin_productos():
+    if not session.get("autenticado"):
+        return redirect(url_for("pagina"))
+    productos = cargar_productos()
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Admin Productos - Abarrotes Flor</title>
+        <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+        <style>
+            body { font-family: 'Poppins', sans-serif; background: #f4f4f4; margin:0; padding:20px; }
+            .container { max-width: 1200px; margin: auto; background: white; border-radius: 20px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+            h1 { color: #2a6e3f; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #2a6e3f; color: white; }
+            img { width: 50px; height: 50px; object-fit: cover; border-radius: 8px; }
+            .btn { display: inline-block; padding: 8px 16px; margin: 2px; border-radius: 25px; text-decoration: none; font-weight: 600; }
+            .btn-edit { background: #f39c12; color: white; }
+            .btn-delete { background: #e74c3c; color: white; }
+            .btn-add { background: #2a6e3f; color: white; margin-bottom: 20px; }
+            .volver { display: inline-block; margin-top: 20px; color: #2a6e3f; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Administrar Productos</h1>
+            <a href="/admin/productos/agregar" class="btn btn-add">+ Agregar producto</a>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>Imagen</th><th>Nombre</th><th>Descripción</th><th>Precio</th><th>Acciones</th><tr>
+                </thead>
+                <tbody>
+    """
+    for p in productos:
+        html += f"""
+            <tr>
+                <td>{p['id']}</td>
+                <td><img src="{p['imagen']}" alt="{p['nombre']}"></td>
+                <td>{p['nombre']}</td>
+                <td>{p['descripcion']}</td>
+                <td>S/ {p['precio']:.2f}</td>
+                <td>
+                    <a href="/admin/productos/editar/{p['id']}" class="btn btn-edit">Editar</a>
+                    <a href="/admin/productos/eliminar/{p['id']}" class="btn btn-delete" onclick="return confirm('¿Eliminar {p['nombre']}?')">Eliminar</a>
+                </td>
+            </tr>
+        """
+    html += """
+                </tbody>
+            </table>
+            <a href="/" class="volver">← Volver a la tienda</a>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+@app.route("/admin/productos/agregar", methods=["GET", "POST"])
+def agregar_producto():
+    if not session.get("autenticado"):
+        return redirect(url_for("pagina"))
+    if request.method == "POST":
+        nombre = request.form.get("nombre", "").strip()
+        descripcion = request.form.get("descripcion", "").strip()
+        precio = request.form.get("precio", "").strip()
+        imagen = request.form.get("imagen", "").strip()
+        if not nombre or not precio:
+            return "Error: nombre y precio son obligatorios", 400
+        try:
+            precio = float(precio)
+        except:
+            return "Error: precio debe ser un número", 400
+        productos = cargar_productos()
+        nuevo_id = max([p["id"] for p in productos], default=0) + 1
+        productos.append({
+            "id": nuevo_id,
+            "nombre": nombre,
+            "descripcion": descripcion,
+            "precio": precio,
+            "imagen": imagen if imagen else "https://via.placeholder.com/150"
+        })
+        guardar_productos(productos)
+        return redirect(url_for("admin_productos"))
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Agregar Producto</title>
+        <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+        <style>
+            body { font-family: 'Poppins', sans-serif; background: #f4f4f4; padding: 40px; }
+            .form-card { max-width: 500px; margin: auto; background: white; border-radius: 20px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+            label { font-weight: 600; display: block; margin-top: 15px; }
+            input, textarea { width: 100%; padding: 10px; margin-top: 5px; border-radius: 12px; border: 1px solid #ccc; }
+            button { background: #2a6e3f; color: white; border: none; padding: 12px 20px; border-radius: 25px; margin-top: 20px; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <div class="form-card">
+            <h2>Agregar Producto</h2>
+            <form method="POST">
+                <label>Nombre *</label>
+                <input type="text" name="nombre" required>
+                <label>Descripción</label>
+                <textarea name="descripcion" rows="3"></textarea>
+                <label>Precio (S/) *</label>
+                <input type="number" step="0.01" name="precio" required>
+                <label>URL de la imagen</label>
+                <input type="url" name="imagen" placeholder="https://ejemplo.com/imagen.jpg">
+                <button type="submit">Guardar Producto</button>
+            </form>
+            <a href="/admin/productos">← Cancelar</a>
+        </div>
+    </body>
+    </html>
+    """)
+
+@app.route("/admin/productos/editar/<int:id>", methods=["GET", "POST"])
+def editar_producto(id):
+    if not session.get("autenticado"):
+        return redirect(url_for("pagina"))
+    productos = cargar_productos()
+    producto = next((p for p in productos if p["id"] == id), None)
+    if not producto:
+        return "Producto no encontrado", 404
+    if request.method == "POST":
+        producto["nombre"] = request.form.get("nombre", "").strip()
+        producto["descripcion"] = request.form.get("descripcion", "").strip()
+        try:
+            producto["precio"] = float(request.form.get("precio", 0))
+        except:
+            pass
+        producto["imagen"] = request.form.get("imagen", "").strip()
+        guardar_productos(productos)
+        return redirect(url_for("admin_productos"))
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Editar Producto</title>
+        <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+        <style>
+            body { font-family: 'Poppins', sans-serif; background: #f4f4f4; padding: 40px; }
+            .form-card { max-width: 500px; margin: auto; background: white; border-radius: 20px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+            label { font-weight: 600; display: block; margin-top: 15px; }
+            input, textarea { width: 100%; padding: 10px; margin-top: 5px; border-radius: 12px; border: 1px solid #ccc; }
+            button { background: #2a6e3f; color: white; border: none; padding: 12px 20px; border-radius: 25px; margin-top: 20px; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <div class="form-card">
+            <h2>Editar Producto</h2>
+            <form method="POST">
+                <label>Nombre *</label>
+                <input type="text" name="nombre" value="{{ producto.nombre }}" required>
+                <label>Descripción</label>
+                <textarea name="descripcion" rows="3">{{ producto.descripcion }}</textarea>
+                <label>Precio (S/) *</label>
+                <input type="number" step="0.01" name="precio" value="{{ producto.precio }}" required>
+                <label>URL de la imagen</label>
+                <input type="url" name="imagen" value="{{ producto.imagen }}">
+                <button type="submit">Actualizar</button>
+            </form>
+            <a href="/admin/productos">← Cancelar</a>
+        </div>
+    </body>
+    </html>
+    """, producto=producto)
+
+@app.route("/admin/productos/eliminar/<int:id>")
+def eliminar_producto(id):
+    if not session.get("autenticado"):
+        return redirect(url_for("pagina"))
+    productos = cargar_productos()
+    productos = [p for p in productos if p["id"] != id]
+    guardar_productos(productos)
+    return redirect(url_for("admin_productos"))
+
+# ---------- Dashboard ----------
+@app.route("/dashboard")
+def dashboard():
+    if not session.get("autenticado"):
+        return redirect(url_for("pagina"))
+
+    total_clientes = len(clientes_registrados)
+    productos = cargar_productos()
+    total_productos_dinamicos = len(productos)
+    total_productos_estaticos = 60  # ← AJUSTA SEGÚN TUS PRODUCTOS FIJOS
+    total_productos = total_productos_estaticos + total_productos_dinamicos
+
+    if productos:
+        precio_promedio = sum(p["precio"] for p in productos) / len(productos)
+    else:
+        precio_promedio = 0.0
+
+    ventas_mes = round(random.uniform(100, 500), 2)
+
+    hoy = datetime.now()
+    dias = [(hoy - timedelta(days=i)).strftime("%d/%m") for i in range(6, -1, -1)]
+
+    ventas_diarias = [round(random.uniform(10, 80), 2) for _ in range(7)]
+
+    if total_clientes == 0:
+        nuevos_clientes_linea = [0] * 7
+    else:
+        base = total_clientes // 7
+        resto = total_clientes % 7
+        nuevos_clientes_linea = [base + (1 if i < resto else 0) for i in range(7)]
+
+    if total_productos_dinamicos == 0:
+        nuevos_productos_linea = [0] * 7
+    else:
+        base = total_productos_dinamicos // 7
+        resto = total_productos_dinamicos % 7
+        nuevos_productos_linea = [base + (1 if i < resto else 0) for i in range(7)]
+
+    variacion_productos = int(total_productos * 0.1)
+
+    ultimos_clientes = clientes_registrados[-5:] if clientes_registrados else []
+    ultimos_productos = sorted(productos, key=lambda x: x['id'], reverse=True)[:5] if productos else []
+
+    hora_actual = datetime.now().strftime("%H:%M:%S")
+
+    return render_template_string(DASHBOARD_TEMPLATE,
+                                   total_productos=total_productos,
+                                   precio_promedio=precio_promedio,
+                                   total_clientes=total_clientes,
+                                   ventas_mes=ventas_mes,
+                                   variacion_productos=variacion_productos,
+                                   dias=dias,
+                                   ventas_diarias=ventas_diarias,
+                                   nuevos_clientes_linea=nuevos_clientes_linea,
+                                   nuevos_productos_linea=nuevos_productos_linea,
+                                   hora_actual=hora_actual,
+                                   ultimos_clientes=ultimos_clientes,
+                                   ultimos_productos=ultimos_productos)
+
+# ---------- Cerrar sesión ----------
+@app.route("/logout")
+def logout():
+    session.pop("autenticado", None)
+    return redirect(url_for("pagina"))
+
+# -----------------------------------------------------------
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
