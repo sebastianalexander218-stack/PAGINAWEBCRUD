@@ -2113,23 +2113,23 @@ def pagina():
                     return;
                 }}
 
-                var html = '';
-                carrito.forEach(function(item, index) {{
-                   html += `
-    <div class="carrito-item">
-        <div class="carrito-item-info">
-            <div class="carrito-item-nombre">${item.nombre}</div>
-            <div class="carrito-item-precio">S/ ${item.precio.toFixed(2)} c/u</div>
-            <div>Subtotal: S/ ${(item.precio * item.cantidad).toFixed(2)}</div>
-        </div>
-        <div class="carrito-item-acciones">
-            <input type="number" class="carrito-cantidad" value="${item.cantidad}" min="1" 
-                onchange="actualizarCantidad(${index}, this.value)">
-            <button class="btn-eliminar" onclick="eliminarDelCarrito(${index})">×</button>
-        </div>
+               var html = '';
+carrito.forEach(function(item, index) {{
+   html += `
+<div class="carrito-item">
+    <div class="carrito-item-info">
+        <div class="carrito-item-nombre">${{item.nombre}}</div>
+        <div class="carrito-item-precio">S/ ${{item.precio.toFixed(2)}} c/u</div>
+        <div>Subtotal: S/ ${{(item.precio * item.cantidad).toFixed(2)}}</div>
     </div>
+    <div class="carrito-item-acciones">
+        <input type="number" class="carrito-cantidad" value="${{item.cantidad}}" min="1" 
+            onchange="actualizarCantidad(${{index}}, this.value)">
+        <button class="btn-eliminar" onclick="eliminarDelCarrito(${{index}})">×</button>
+    </div>
+</div>
 `;
-                }});
+}});
                 contenedor.innerHTML = html;
             }}
 
