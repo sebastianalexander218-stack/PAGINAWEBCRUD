@@ -33,6 +33,20 @@ def guardar_productos(productos):
     with open(PRODUCTOS_ARCHIVO, "w", encoding="utf-8") as f:
         json.dump(productos, f, indent=2, ensure_ascii=False)
 
+# ---------- Gestión de ventas con archivo JSON ----------
+VENTAS_ARCHIVO = "ventas.json"
+
+def cargar_ventas():
+    """Carga la lista de ventas desde el archivo JSON."""
+    if not os.path.exists(VENTAS_ARCHIVO):
+        return []
+    with open(VENTAS_ARCHIVO, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def guardar_ventas(ventas):
+    with open(VENTAS_ARCHIVO, "w", encoding="utf-8") as f:
+        json.dump(ventas, f, indent=2, ensure_ascii=False)
+
 # ---------- TEMPLATE DEL DASHBOARD ----------
 DASHBOARD_TEMPLATE = """
 <!DOCTYPE html>
@@ -1297,8 +1311,26 @@ def pagina():
                 <div class="carrito-vacio">El carrito está vacío</div>
             </div>
             <div class="carrito-footer">
+                <!-- Datos del cliente para la compra -->
+                <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+                    <input type="text" id="cliente-nombre" placeholder="Tu nombre *" 
+                           style="flex:1; padding:10px; border-radius:12px; border:1px solid #ccc; font-family:'Poppins',sans-serif;">
+                    <input type="text" id="cliente-telefono" placeholder="Teléfono *" 
+                           style="flex:1; padding:10px; border-radius:12px; border:1px solid #ccc; font-family:'Poppins',sans-serif;">
+                </div>
+
                 <div class="carrito-total" id="carrito-total">Total: S/ 0.00</div>
-                <button class="btn-vaciar" onclick="vaciarCarrito()">Vaciar Carrito</button>
+                
+                <div style="display:flex; gap:10px;">
+                    <button onclick="finalizarCompra()" 
+                            style="flex:2; background:linear-gradient(135deg, #2a6e3f, #3c8c4a); color:white; border:none; padding:12px; border-radius:25px; font-weight:700; cursor:pointer; transition:0.2s;">
+                        ✅ Confirmar Compra
+                    </button>
+                    <button onclick="vaciarCarrito()" 
+                            style="flex:1; background:#e74c3c; color:white; border:none; padding:12px; border-radius:25px; font-weight:700; cursor:pointer;">
+                        Vaciar
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -2053,13 +2085,27 @@ def pagina():
             // ----- CARRITO -----
             var carrito = [];
 
+            // Función para agregar al carrito (modificada para soportar ofertas)
             function addToCartDesdeBoton(boton) {{
+                console.log("Botón clickeado", boton);
                 var card = boton.closest('.oferta-card');
-                if (!card) return;
+                if (!card) {{
+                    console.error("No se encontró la tarjeta del producto");
+                    return;
+                }}
                 var nombre = card.querySelector('h3').textContent.trim();
-                var precioTexto = card.querySelector('.precio-producto') ? 
-                                  card.querySelector('.precio-producto').textContent.trim() :
-                                  null;
+                var precioTexto = null;
+                // Buscar precio de oferta (precio-ahora)
+                var precioAhora = card.querySelector('.precio-ahora');
+                if (precioAhora) {{
+                    precioTexto = precioAhora.textContent.trim();
+                }} else {{
+                    // Buscar precio normal
+                    var precioProducto = card.querySelector('.precio-producto');
+                    if (precioProducto) {{
+                        precioTexto = precioProducto.textContent.trim();
+                    }}
+                }}
                 if (!precioTexto) {{
                     alert("No se pudo obtener el precio.");
                     return;
@@ -2082,6 +2128,24 @@ def pagina():
                 renderizarCarrito();
                 mostrarNotificacion(nombre + " agregado al carrito");
             }}
+
+            // Delegación de eventos para los botones "Pedir Producto" / "Pedir Combo" / "Pedir Oferta"
+            document.addEventListener('click', function(e) {{
+                var boton = e.target.closest('.btn-adquirir');
+                if (boton && document.getElementById('vista-productos').contains(boton)) {{
+                    e.preventDefault();
+                    addToCartDesdeBoton(boton);
+                }}
+            }});
+
+            // También para los botones de ofertas en la página de inicio (vista-inicio)
+            document.addEventListener('click', function(e) {{
+                var boton = e.target.closest('.btn-adquirir');
+                if (boton && document.getElementById('vista-inicio').contains(boton)) {{
+                    e.preventDefault();
+                    addToCartDesdeBoton(boton);
+                }}
+            }});
 
             function toggleCarrito() {{
                 var modal = document.getElementById('carrito-modal');
@@ -2175,19 +2239,72 @@ carrito.forEach(function(item, index) {{
                 }}, 1500);
             }}
 
-            // Asignar evento a todos los botones "Pedir Producto" dentro de #vista-productos
-            document.addEventListener('DOMContentLoaded', function() {{
-                var productosSection = document.getElementById('vista-productos');
-                if (productosSection) {{
-                    var botones = productosSection.querySelectorAll('.btn-adquirir');
-                    botones.forEach(function(boton) {{
-                        boton.addEventListener('click', function(e) {{
-                            e.preventDefault();
-                            addToCartDesdeBoton(this);
-                        }});
-                    }});
+            // ----- FINALIZAR COMPRA (CORREGIDA) -----
+            function finalizarCompra() {{
+                var nombreInput = document.getElementById('cliente-nombre');
+                var telefonoInput = document.getElementById('cliente-telefono');
+
+                if (!nombreInput || !telefonoInput) {{
+                    alert('Error: no se encontraron los campos de nombre y teléfono.');
+                    return;
                 }}
-            }});
+
+                var nombre = nombreInput.value.trim();
+                var telefono = telefonoInput.value.trim();
+
+                if (carrito.length === 0) {{
+                    alert('El carrito está vacío. Agrega productos primero.');
+                    return;
+                }}
+
+                if (!nombre || !telefono) {{
+                    alert('Por favor, ingresa tu nombre y teléfono para confirmar la compra.');
+                    return;
+                }}
+
+                var total = carrito.reduce(function(sum, item) {{
+                    return sum + item.precio * item.cantidad;
+                }}, 0);
+
+                var items = carrito.map(function(item) {{
+                    return {{
+                        nombre: item.nombre,
+                        cantidad: item.cantidad,
+                        precio: item.precio
+                    }};
+                }});
+
+                fetch('/finalizar_compra', {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json',
+                    }},
+                    body: JSON.stringify({{
+                        cliente: nombre,
+                        telefono: telefono,
+                        total: total,
+                        items: items
+                    }})
+                }})
+                .then(function(response) {{
+                    return response.json();
+                }})
+                .then(function(data) {{
+                    if (data.error) {{
+                        alert('Error: ' + data.error);
+                    }} else {{
+                        alert(data.message);
+                        vaciarCarrito();
+                        toggleCarrito();
+                        nombreInput.value = '';
+                        telefonoInput.value = '';
+                    }}
+                }})
+                .catch(function(error) {{
+                    alert('Hubo un problema al registrar tu compra. Intenta de nuevo.');
+                    console.error('Error:', error);
+                }});
+            }}
 
             // Funciones admin (sin cambios)
             var clientes = [];
@@ -2543,50 +2660,79 @@ def eliminar_producto(id):
     guardar_productos(productos)
     return redirect(url_for("admin_productos"))
 
+# ---------- Finalizar compra (conectar carrito con dashboard) ----------
+@app.route("/finalizar_compra", methods=["POST"])
+def finalizar_compra():
+    data = request.get_json()
+    nombre = data.get("cliente", "").strip()
+    telefono = data.get("telefono", "").strip()
+    total = data.get("total")
+    items = data.get("items", [])
+
+    if not nombre or not telefono:
+        return {"error": "Nombre y teléfono son obligatorios"}, 400
+    if not total or not items:
+        return {"error": "El carrito está vacío"}, 400
+
+    ventas = cargar_ventas()
+    nuevo_id = max([v["id"] for v in ventas], default=0) + 1
+
+    ventas.append({
+        "id": nuevo_id,
+        "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "cliente": nombre,
+        "telefono": telefono,
+        "total": round(total, 2),
+        "items": items
+    })
+
+    guardar_ventas(ventas)
+    return {"status": "ok", "message": f"¡Gracias {nombre}! Tu compra de S/ {round(total, 2)} fue registrada."}
+
 # ---------- Dashboard ----------
 @app.route("/dashboard")
 def dashboard():
     if not session.get("autenticado"):
         return redirect(url_for("pagina"))
 
+    # 1. Clientes y productos
     total_clientes = len(clientes_registrados)
     productos = cargar_productos()
     total_productos_dinamicos = len(productos)
     total_productos_estaticos = 60  # ← AJUSTA SEGÚN TUS PRODUCTOS FIJOS
     total_productos = total_productos_estaticos + total_productos_dinamicos
+    precio_promedio = sum(p["precio"] for p in productos) / len(productos) if productos else 0.0
 
-    if productos:
-        precio_promedio = sum(p["precio"] for p in productos) / len(productos)
-    else:
-        precio_promedio = 0.0
-
-    ventas_mes = round(random.uniform(100, 500), 2)
-
+    # 2. Ventas reales desde el archivo
+    ventas = cargar_ventas()
     hoy = datetime.now()
+    mes_actual = hoy.month
+    anio_actual = hoy.year
+
+    # Ventas del mes (suma de totales)
+    ventas_mes = sum(v["total"] for v in ventas if v["fecha"].startswith(f"{anio_actual}-{mes_actual:02d}"))
+
+    # Ventas de los últimos 7 días (para el gráfico de líneas)
+    ventas_diarias = []
+    for i in range(6, -1, -1):
+        fecha_str = (hoy - timedelta(days=i)).strftime("%Y-%m-%d")
+        total_dia = sum(v["total"] for v in ventas if v["fecha"].startswith(fecha_str))
+        ventas_diarias.append(round(total_dia, 2))
+
+    # Datos para el gráfico de barras (Clientes vs Productos nuevos)
     dias = [(hoy - timedelta(days=i)).strftime("%d/%m") for i in range(6, -1, -1)]
 
-    ventas_diarias = [round(random.uniform(10, 80), 2) for _ in range(7)]
+    # Simulamos nuevos clientes y productos para la gráfica (puedes dejarlo así o mejorarlo)
+    nuevos_clientes_linea = [random.randint(0, 2) for _ in range(7)]
+    nuevos_productos_linea = [random.randint(0, 1) for _ in range(7)]
 
-    if total_clientes == 0:
-        nuevos_clientes_linea = [0] * 7
-    else:
-        base = total_clientes // 7
-        resto = total_clientes % 7
-        nuevos_clientes_linea = [base + (1 if i < resto else 0) for i in range(7)]
-
-    if total_productos_dinamicos == 0:
-        nuevos_productos_linea = [0] * 7
-    else:
-        base = total_productos_dinamicos // 7
-        resto = total_productos_dinamicos % 7
-        nuevos_productos_linea = [base + (1 if i < resto else 0) for i in range(7)]
-
-    variacion_productos = int(total_productos * 0.1)
-
+    # Últimos registros
     ultimos_clientes = clientes_registrados[-5:] if clientes_registrados else []
     ultimos_productos = sorted(productos, key=lambda x: x['id'], reverse=True)[:5] if productos else []
 
     hora_actual = datetime.now().strftime("%H:%M:%S")
+
+    variacion_productos = int(total_productos * 0.1)  # o cualquier cálculo
 
     return render_template_string(DASHBOARD_TEMPLATE,
                                    total_productos=total_productos,
